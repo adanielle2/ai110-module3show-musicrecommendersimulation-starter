@@ -144,25 +144,21 @@ You can add more tests in `tests/test_recommender.py`.
 
 ![Demo output](assets/demo_output.png)
 
-Use this section to document the experiments you ran. For example:
+**Standard profiles (High-Energy Pop, Chill Lofi, Deep Intense Rock):**
 
-- What happened when you changed the weight on genre from 2.0 to 0.5
-- What happened when you added tempo or valence to the score
-- How did your system behave for different types of users
+![Standard profiles output](assets/profiles_standard.png)
+
+**Adversarial profiles (Conflicting, Unknown Genre, Perfectly Neutral):**
+
+![Adversarial profiles output](assets/profiles_adversarial.png)
+
+The most revealing experiment was a weight shift that halved the genre bonus (3.0 → 1.5) and doubled the energy multiplier (2.0 → 4.0). Under the original weights, the Conflicting profile ("blues, sad, energy 0.9") ranked "Crossroads Lament" first by a comfortable 2.88-point margin, because the genre+mood double-match (+5.0) completely buried the energy mismatch. After the weight shift, that margin collapsed to just 0.26 points — the high-energy tracks had nearly caught up. This showed that the original system was far more sensitive to categorical labels than to how a song actually sounds, and that small weight changes can dramatically shift which songs surface for edge-case users.
 
 ---
 
 ## Limitations and Risks
 
-Summarize some limitations of your recommender.
-
-Examples:
-
-- It only works on a tiny catalog
-- It does not understand lyrics or language
-- It might over favor one genre or mood
-
-You will go deeper on this in your model card.
+This recommender works well when a user's preferences align with a well-represented genre in the catalog, but it struggles in several realistic situations. The catalog only contains 18 songs, so genres with a single entry (metal, ambient, blues) can never fill a top-5 list on their own. The system has no awareness of audio content — it cannot detect tempo feel, lyrical themes, or production texture beyond the seven numeric and categorical fields in the CSV. Genre dominance is the sharpest risk: because the genre bonus (+1.5 even after the weight shift) is a hard categorical match, a song that is a near-perfect fit on energy, mood, and acousticness will still lose to a weak genre match. Finally, the system has no memory — it resets completely each session and cannot learn that a user skipped every "intense" recommendation or replayed the same lofi track five times.
 
 ---
 

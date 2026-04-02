@@ -68,22 +68,37 @@ def load_songs(csv_path: str) -> List[Dict]:
 
 def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
     """Score one song against user preferences; return (total_score, reasons)."""
+    # ── EXPERIMENT: Weight Shift ───────────────────────────────────────────────
+    # Original weights:  genre +3.0 · energy ×2.0  → max score 8.5
+    # Experiment weights: genre +1.5 · energy ×4.0  → max score 9.0
+    #
+    # Math check:
+    #   energy range is [0.0, 1.0], so abs(song.energy - target) ∈ [0.0, 1.0]
+    #   → (1.0 - delta) ∈ [0.0, 1.0]  → ×4.0 keeps energy_points ∈ [0.0, 4.0] ✓
+    #   All contributions remain non-negative; total score ∈ [0.0, 9.0] ✓
+    # ──────────────────────────────────────────────────────────────────────────
+    GENRE_WEIGHT  = 1.5   # was 3.0
+    ENERGY_SCALE  = 4.0   # was 2.0
+    MOOD_WEIGHT   = 2.0   # unchanged
+    ACOUSTIC_HI   = 1.5   # unchanged
+    ACOUSTIC_LO   = 1.0   # unchanged
+
     score = 0.0
     reasons = []
 
     # Genre match
     if song["genre"] == user_prefs.get("genre", ""):
-        score += 3.0
-        reasons.append(f"genre match: {song['genre']} (+3.0)")
+        score += GENRE_WEIGHT
+        reasons.append(f"genre match: {song['genre']} (+{GENRE_WEIGHT})")
 
     # Mood match
     if song["mood"] == user_prefs.get("mood", ""):
-        score += 2.0
-        reasons.append(f"mood match: {song['mood']} (+2.0)")
+        score += MOOD_WEIGHT
+        reasons.append(f"mood match: {song['mood']} (+{MOOD_WEIGHT})")
 
     # Energy proximity
     target_energy = user_prefs.get("energy", 0.5)
-    energy_points = round((1.0 - abs(song["energy"] - target_energy)) * 2.0, 2)
+    energy_points = round((1.0 - abs(song["energy"] - target_energy)) * ENERGY_SCALE, 2)
     score += energy_points
     reasons.append(
         f"energy proximity: |{song['energy']} - {target_energy}| → +{energy_points}"
@@ -92,11 +107,11 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
     # Acoustic bonus
     likes_acoustic = user_prefs.get("likes_acoustic", None)
     if likes_acoustic is True and song["acousticness"] > 0.6:
-        score += 1.5
-        reasons.append(f"acoustic match: acousticness {song['acousticness']} (+1.5)")
+        score += ACOUSTIC_HI
+        reasons.append(f"acoustic match: acousticness {song['acousticness']} (+{ACOUSTIC_HI})")
     elif likes_acoustic is False and song["acousticness"] < 0.3:
-        score += 1.0
-        reasons.append(f"non-acoustic match: acousticness {song['acousticness']} (+1.0)")
+        score += ACOUSTIC_LO
+        reasons.append(f"non-acoustic match: acousticness {song['acousticness']} (+{ACOUSTIC_LO})")
 
     return round(score, 2), reasons
 
