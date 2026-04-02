@@ -2,32 +2,106 @@
 
 ## Project Summary
 
-In this project you will build and explain a small music recommender system.
-
-Your goal is to:
-
-- Represent songs and a user "taste profile" as data
-- Design a scoring rule that turns that data into recommendations
-- Evaluate what your system gets right and wrong
-- Reflect on how this mirrors real world AI recommenders
-
-Replace this paragraph with your own summary of what your version does.
+This recommender takes a user's preferred genre, mood, energy level, and acoustic preference, then scores each song in a 10-track catalog using a weighted formula. Genre and mood matches contribute a fixed bonus (3.0 and 2.0 points respectively), energy proximity is scored using 1 - |song.energy - target_energy| scaled by 2.0, and an acoustic bonus is awarded when the user's likes_acoustic preference aligns with the song's acousticness value. After every song is scored individually, the system ranks all songs by their total score and returns the top k results. The approach is content-based — it relies entirely on song attributes and a hand-crafted profile, with no listening history or other users involved.
 
 ---
 
 ## How The System Works
 
-Explain your design in plain language.
+**What features does each Song use?**
 
-Some prompts to answer:
+Each song carries seven attributes: `genre` (e.g. lofi, pop, rock), `mood` (e.g. chill, happy, intense), `energy` (0.0–1.0, from very calm to very driving), `acousticness` (0.0–1.0, from fully electronic to fully acoustic), `valence` (0.0–1.0, how positive or upbeat the song feels), `danceability` (0.0–1.0), and `tempo_bpm` (beats per minute). The system primarily uses genre, mood, energy, and acousticness when scoring.
 
-- What features does each `Song` use in your system
-  - For example: genre, mood, energy, tempo
-- What information does your `UserProfile` store
-- How does your `Recommender` compute a score for each song
-- How do you choose which songs to recommend
+**What does the UserProfile store?**
 
-You can include a simple diagram or bullet list if helpful.
+The user profile stores four things: a `favorite_genre`, a `favorite_mood`, a `target_energy` value (a number between 0 and 1 representing how energetic the user wants their music to feel right now), and a `likes_acoustic` flag (true or false).
+
+**How does the Recommender score each song?**
+
+Every song in the catalog is scored independently against the user profile using a weighted formula:
+
+- **Genre match** adds 3.0 points — the strongest signal, since genre is the clearest indicator of overall sound.
+- **Mood match** adds 2.0 points — a useful tiebreaker when multiple songs have similar energy.
+- **Energy proximity** contributes up to 2.0 points, calculated as `(1 - |song.energy - target_energy|) × 2.0`. A perfect energy match scores 2.0; a song at the opposite extreme scores 0.0.
+- **Acoustic preference** adds 1.5 points if the user likes acoustic and the song's `acousticness` is above 0.6, or 1.0 points if the user prefers non-acoustic and the song's `acousticness` is below 0.3.
+
+**How does the system choose which songs to recommend?**
+
+After every song has been scored, the system sorts all songs from highest score to lowest and returns the top `k` results (default 5). If two songs tie on score, the one with the lower catalog ID appears first.
+
+**Data flow diagram**
+
+```mermaid
+flowchart TD
+    CSV["📄 data/songs.csv"]:::input -->|load_songs| SONGS["Song Catalog · 18 songs"]
+    USER["👤 UserProfile · genre · mood · energy · likes_acoustic"]:::input --> LOOP
+
+    SONGS --> LOOP
+
+    subgraph LOOP ["🔁  Score Each Song"]
+        direction TB
+        S1["Genre match → +3.0 pts"]
+        S2["Mood match → +2.0 pts"]
+        S3["Energy proximity → up to +2.0 pts"]
+        S4["Acoustic bonus → +1.5 / +1.0 / 0 pts"]
+        TOTAL["Song total score"]
+        S1 --> S2 --> S3 --> S4 --> TOTAL
+    end
+
+    LOOP -->|all songs scored| RANK["Sort all scores high → low"]
+    RANK --> OUT["🎵 Top K Recommendations"]:::output
+
+    classDef input  fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+    classDef output fill:#14532d,stroke:#22c55e,color:#bbf7d0
+```
+
+---
+
+## Algorithm Recipe
+
+A precise, step-by-step description of the scoring logic so it can be re-implemented or audited without reading the code.
+
+**Inputs**
+- A `UserProfile` with: `favorite_genre` (string), `favorite_mood` (string), `target_energy` (float 0–1), `likes_acoustic` (bool)
+- A catalog of `Song` objects loaded from `data/songs.csv`
+- An integer `k` (how many songs to return, default 5)
+
+**For each song in the catalog:**
+
+1. Start with `score = 0.0`
+2. **Genre bonus** — if `song.genre == user.favorite_genre`, add `3.0`
+3. **Mood bonus** — if `song.mood == user.favorite_mood`, add `2.0`
+4. **Energy score** — add `(1.0 - abs(song.energy - user.target_energy)) * 2.0`
+   - Perfect match → `+2.0`; opposite extreme → `+0.0`
+5. **Acoustic bonus**
+   - If `user.likes_acoustic` is `True` and `song.acousticness > 0.6` → add `1.5`
+   - If `user.likes_acoustic` is `False` and `song.acousticness < 0.3` → add `1.0`
+   - Otherwise → add `0.0`
+6. Record `(song, score)`
+
+**Ranking:**
+
+7. Sort all `(song, score)` pairs by `score` descending
+8. Break ties by `song.id` ascending
+9. Return the first `k` songs
+
+**Maximum possible score: 8.5** (genre + mood + perfect energy + acoustic bonus)
+
+---
+
+## Known Biases and Limitations
+
+**Genre dominates the score.** At 3.0 points, a genre match outweighs a perfect energy match (2.0) and a mood match (2.0) combined when either of those is missing. A genuinely great fit on energy, mood, *and* acousticness can still lose to a weak genre match. This means the system can surface a song the user finds sonically wrong simply because the genre label matches.
+
+**Mood and genre are correlated in this catalog.** Lofi songs are nearly always "chill," pop songs trend toward "happy" or "intense," and metal is "angry." A user who picks `genre=lofi` and `mood=chill` gets a double bonus on the same songs, amplifying the genre bias rather than correcting for it.
+
+**The acoustic bonus is asymmetric.** A user who likes acoustic gets +1.5 while a user who dislikes acoustic gets only +1.0. Non-acoustic preferences are slightly under-rewarded.
+
+**Energy is the only continuous, user-tunable signal.** Valence, danceability, and tempo are recorded in the data but play no role in scoring. A user who wants upbeat music (`valence`) or slow music (`tempo`) has no way to express that, and the system has no way to reward it.
+
+**The catalog is tiny and genre-skewed.** With only 18 songs, a user whose favorite genre has fewer than 3 entries (e.g. metal, ambient, blues) will likely receive off-genre songs in their top K regardless of other preferences.
+
+**No personalization over time.** Every session starts from scratch. The system cannot learn that a user skipped every "intense" song it recommended, or that they replayed "Library Rain" five times.
 
 ---
 
@@ -67,6 +141,8 @@ You can add more tests in `tests/test_recommender.py`.
 ---
 
 ## Experiments You Tried
+
+![Demo output](assets/demo_output.png)
 
 Use this section to document the experiments you ran. For example:
 
